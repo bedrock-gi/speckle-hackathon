@@ -22,6 +22,7 @@ st.set_page_config(page_title="Project Activity", page_icon="📊")
 header = st.container()
 auth_input = st.container()
 project_input = st.container()
+model_input = st.container()
 viewer = st.container()
 report = st.container()
 graphs = st.container()
@@ -59,7 +60,7 @@ try:
     # print(account)
 except SpeckleWarning:
     auth_input.error(
-        "Oops 😨 The Speckle server - token combination is incorrect or invalid.",
+        "Oh no 😨 The Speckle server - token combination is incorrect or invalid.",
         icon="🚨",
     )
     auth_input.markdown(
@@ -69,20 +70,66 @@ except SpeckleWarning:
 
 # Select Speckle project
 projects = client.stream.list()
+if not projects:
+    model_input.error(
+        "Oh no 😨 It seems your Speckle account doesn't contain any projects yet on the given server. Try creating a new Speckle project and adding some data to that Speckle project 🤩",
+        icon="🚨",
+    )
+    st.stop()
+
 project_names = [p.name for p in projects]
 project_name = project_input.selectbox(
     label="Select your Speckle project",
     options=project_names,
     help="Select your Speckle stream from the dropdown",
 )
-speckle_project = client.stream.search(project_name)[0]
+selected_project = projects[project_names.index(project_name)]
 
-# models = client.branch.list(speckle_project.basepath)
+# Select the Speckle model for the selected Speckle project
+models = client.branch.list(selected_project.id)
+model_df = []
+for model in models:
+    if model.commits.totalCount > 0:
+        model_dict = {
+            "Show": False,
+            "Model name": model.name,
+            "Description": model.description,
+            "Latest version author": model.commits.items[0].authorName,
+            "Latest version commit message": model.commits.items[0].message,
+            "ModelID": model.id,
+        }
+        model_df.append(model_dict)
 
-# st.write(models)
+if not model_df:
+    model_input.error(
+        "Oh no 😨 It seems your Speckle project doesn't contain any models. Try adding some data to your Speckle project 🤩",
+        icon="🚨",
+    )
+    st.stop()
 
+model_input.markdown(
+    "Select the models of this project that you want to show (together) in the Speckle viewer below"
+)
+model_df = pd.DataFrame(model_df)
+edited_models_df = model_input.data_editor(
+    model_df,
+    hide_index=True,
+    disabled=[
+        "Model name",
+        "Description",
+        "Latest version author",
+        "Latest version commit message",
+        "ModelID",
+    ],
+)
+selected_model_ids = edited_models_df[edited_models_df["Show"]]["ModelID"]
+selected_models_str = ",".join(selected_model_ids.to_list())
+
+
+# Show the selected (federated) model in a Speckle viewer
 with viewer:
     st.components.v1.iframe(
-        src=r"https://app.speckle.systems/projects/819e2ce794/models/1777ce51ab#embed=%7B%22isEnabled%22%3Atrue%7D",
+        src=f"https://app.speckle.systems/projects/{selected_project.id}/models/{selected_models_str}#embed=%7B%22isEnabled%22%3Atrue%7D",
         height=500,
     )
+
